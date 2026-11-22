@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import JSZip from "jszip";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFName, StandardFonts, rgb } from "pdf-lib";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
 const base = process.argv[2] || process.env.RELEASE_BASE_URL || "http://127.0.0.1:4173";
@@ -61,6 +61,10 @@ const pdfFixture = await (async () => {
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   for (const [index, color] of [[0, rgb(0.1, 0.4, 0.8)], [1, rgb(0.8, 0.25, 0.15)]]) {
     const page = pdf.addPage([612, 792]);
+    page.drawRectangle({ x: 0, y: 0, width: 306, height: 396, color: rgb(0.92, 0.08, 0.08) });
+    page.drawRectangle({ x: 306, y: 0, width: 306, height: 396, color: rgb(0.08, 0.82, 0.12) });
+    page.drawRectangle({ x: 0, y: 396, width: 306, height: 396, color: rgb(0.08, 0.12, 0.92) });
+    page.drawRectangle({ x: 306, y: 396, width: 306, height: 396, color: rgb(0.94, 0.84, 0.08) });
     page.drawRectangle({ x: 36, y: 660, width: 540, height: 80, color });
     page.drawText(`Release test page ${index + 1}`, { x: 48, y: 695, size: 24, font, color: rgb(1, 1, 1) });
     page.drawText(`Page ${index + 1} content for PDF and PowerPoint conversion checks.`, { x: 48, y: 620, size: 14, font });
@@ -68,6 +72,22 @@ const pdfFixture = await (async () => {
   return Buffer.from(await pdf.save());
 })();
 const pdfFile = { name: "studio-fixture.pdf", mimeType: "application/pdf", buffer: pdfFixture };
+const embeddedJpegs = async (pdfBytes) => {
+  const pdf = await PDFDocument.load(pdfBytes);
+  return pdf.context.enumerateIndirectObjects()
+    .filter(([, object]) => object.dict?.get(PDFName.of("Subtype"))?.toString() === "/Image" && object.dict?.get(PDFName.of("Filter"))?.toString() === "/DCTDecode")
+    .map(([, object]) => Buffer.from(object.contents));
+};
+const scannedPdfFixture = await (async () => {
+  const pdf = await PDFDocument.create();
+  for (let index = 0; index < 3; index += 1) {
+    const page = pdf.addPage([800, 600]);
+    const image = await pdf.embedJpg(photo);
+    page.drawImage(image, { x: 0, y: 0, width: 800, height: 600 });
+  }
+  return Buffer.from(await pdf.save());
+})();
+const scannedPdfFile = { name: "scanned-document.pdf", mimeType: "application/pdf", buffer: scannedPdfFixture };
 const documentOperation = async (name, files) => {
   await page.locator("button").filter({ hasText: name }).first().click();
   await page.locator('input[type="file"]').setInputFiles(files);
@@ -187,6 +207,8 @@ try {
   await go("/app/documents");
   const documentWriteCount = writes.length;
   await documentOperation("Compress PDF", pdfFile);
+  check(await page.getByLabel("Balanced · raster pages").isChecked(), "PDF compression defaults to the recommended size-reduction mode");
+  await page.getByLabel("Lossless rewrite").click();
   const losslessPdf = await processDocument("lossless PDF compression");
   const losslessDoc = await PDFDocument.load(losslessPdf.bytes);
   check(losslessPdf.name.endsWith(".pdf") && losslessDoc.getPageCount() === 2, "lossless PDF output reopens with both pages intact");
@@ -196,7 +218,16 @@ try {
   const balancedPdf = await processDocument("balanced PDF compression");
   const balancedDoc = await PDFDocument.load(balancedPdf.bytes);
   check(balancedPdf.name.endsWith(".pdf") && balancedDoc.getPageCount() === 2, "balanced PDF output is a valid two-page PDF");
-  check((await page.locator("body").innerText()).includes("Text, vector graphics, forms, accessibility data and document metadata are not preserved"), "balanced compression clearly discloses its rasterization trade-offs");
+  const smallPdfResultText = await page.locator("body").innerText();
+  check(smallPdfResultText.includes("Text, vector graphics, forms, accessibility data and document metadata are not preserved"), "balanced compression clearly discloses its rasterization trade-offs");
+  check(smallPdfResultText.includes("Compression could not make this already compact or image-optimized PDF smaller"), "when a tiny PDF cannot shrink, the result explains why and confirms the original was retained");
+
+  await documentOperation("Compress PDF", scannedPdfFile);
+  await page.getByLabel("Balanced · raster pages").click();
+  const compressedScan = await processDocument("balanced compression of a multi-page scanned PDF");
+  const compressedScanDoc = await PDFDocument.load(compressedScan.bytes);
+  check(compressedScan.bytes.length < scannedPdfFixture.length, `balanced compression reduces an image-heavy PDF (${scannedPdfFixture.length} → ${compressedScan.bytes.length} bytes)`);
+  check(compressedScanDoc.getPageCount() === 3 && compressedScan.name.endsWith("-balanced.pdf"), "compressed scanned PDF keeps all three pages and is clearly named as a smaller result");
 
   await documentOperation("PDF to images", pdfFile);
   const pngZipResult = await processDocument("PDF-to-PNG export");
@@ -262,12 +293,34 @@ try {
   const optimizedDeck = await JSZip.loadAsync(optimizedDeckResult.bytes, { checkCRC32: true });
   const optimizedSlides = Object.keys(optimizedDeck.files).filter((name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"));
   const optimizedSlideOne = await optimizedDeck.file("ppt/slides/slide1.xml")?.async("string");
-  check(optimizedDeckResult.name.endsWith(".pptx") && optimizedSlides.length === 2 && optimizedSlideOne?.includes("Native editable slide 1"), "optimized PowerPoint output remains valid and preserves native slide text");
+  check(optimizedDeckResult.name.endsWith("-optimized.pptx") && optimizedDeckResult.bytes.length < nativeDeckBytes.length && optimizedSlides.length === 2 && optimizedSlideOne?.includes("Native editable slide 1"), `PowerPoint optimization reduces embedded-image size and preserves both slides (${nativeDeckBytes.length} → ${optimizedDeckResult.bytes.length} bytes)`);
 
-  await documentOperation("PowerPoint to PDF", { name: deckResult.name, mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: nativeDeckBytes });
+  await documentOperation("PowerPoint to PDF", { name: deckResult.name, mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: deckResult.bytes });
   const renderedPdf = await processDocument("PowerPoint-to-PDF rendering");
   const renderedDoc = await PDFDocument.load(renderedPdf.bytes);
   check(renderedPdf.name.endsWith(".pdf") && renderedDoc.getPageCount() === 2, "rendered PowerPoint output reopens as a two-page PDF");
+  const renderedJpegs = await embeddedJpegs(renderedPdf.bytes);
+  check(renderedJpegs.length === 2, "each PDF page contains its slide raster rather than a blank or missing page");
+  const renderedSamples = await page.evaluate(async (encoded) => {
+    const image = new Image();
+    image.src = `data:image/jpeg;base64,${encoded}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const points = [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]];
+    const pixels = points.map(([x, y]) => Array.from(context.getImageData(Math.floor(canvas.width * x), Math.floor(canvas.height * y), 1, 1).data).slice(0, 3));
+    return { width: canvas.width, height: canvas.height, pixels };
+  }, renderedJpegs[0].toString("base64"));
+  const targetColors = [[20, 31, 235], [240, 214, 20], [235, 20, 20], [20, 209, 31]];
+  const colorMatches = renderedSamples.pixels.every((pixel, index) => pixel.every((channel, c) => Math.abs(channel - targetColors[index][c]) <= 60));
+  check(Math.abs(renderedSamples.width / renderedSamples.height - 612 / 792) < 0.015 && colorMatches, `PowerPoint-to-PDF keeps the full slide with all four colored corners (not clipped): ${JSON.stringify(renderedSamples)}`);
+
+  await documentOperation("PowerPoint to PDF", { name: "editable-slides.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: nativeDeckBytes });
+  const nativeRendered = await processDocument("PowerPoint-to-PDF rendering of editable text slides");
+  check((await PDFDocument.load(nativeRendered.bytes)).getPageCount() === 2, "editable native PowerPoint slides also render as both PDF pages");
 
   await documentOperation("Compress PDF", { name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("not a PDF") });
   await page.getByRole("button", { name: "Process in browser", exact: true }).click();
