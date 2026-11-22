@@ -273,12 +273,16 @@ try {
   await page.getByRole("button", { name: "Process in browser", exact: true }).click();
   const invalidPdfAlert = page.getByRole("alert");
   await invalidPdfAlert.waitFor({ state: "visible" });
-  check((await invalidPdfAlert.innerText()).length > 0, "invalid PDF input gets a clear visible error instead of a crash");
+  check((await invalidPdfAlert.innerText()).includes("valid PDF signature"), "invalid PDF input explains that its file signature is not a PDF");
   await documentOperation("Optimize PowerPoint", { name: "broken.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: Buffer.from("not a ZIP package") });
   await page.getByRole("button", { name: "Process in browser", exact: true }).click();
   const invalidPptxAlert = page.getByRole("alert");
   await invalidPptxAlert.waitFor({ state: "visible" });
-  check((await invalidPptxAlert.innerText()).length > 0, "invalid PowerPoint input gets a clear visible error instead of a crash");
+  check((await invalidPptxAlert.innerText()).includes("OOXML ZIP signature"), "invalid PowerPoint input explains that its package signature is not a valid PPTX");
+  await documentOperation("Compress PDF", { name: "too-large.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(15 * 1024 * 1024 + 1) });
+  const oversizedAlert = page.getByRole("alert");
+  await oversizedAlert.waitFor({ state: "visible" });
+  check((await oversizedAlert.innerText()).includes("15 MB"), "oversized PDF input is rejected with the explicit 15 MB file-size limit");
   check(writes.length === documentWriteCount, "all PDF and PowerPoint documents stay local with no network writes");
   check(errors.length === 0, `PDF/PPTX workflows raised no uncaught browser errors (${errors.join(" | ")})`);
 

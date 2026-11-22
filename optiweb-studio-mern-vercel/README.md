@@ -110,7 +110,7 @@ The Documents section processes one PDF or `.pptx` at a time in browser memory. 
 
 Input signatures, file extensions and MIME types are cross-checked. PPTX ZIP central/local metadata, entry paths, duplicates, CRCs, XML parts and internal relationships are checked before use. XML entities/DOCTYPEs, path traversal, symbolic links, encrypted/split/ZIP64 packages and excessive archive expansion are refused. Macros are never executed. Rendering uses explicit page, slide and pixel budgets; workers, renderer resources, temporary buffers and download object URLs are cleaned up. Outputs and file names are never sent to an API, placed in browser storage, or retained as history.
 
-The `documents` suite exercises document limits and signatures, package/relationship checks, macro/path rejection and generated visual-slide package structure. It does not replace validation in Chrome/Edge/Firefox or review of representative real PDFs and PPTX files.
+The `documents` suite exercises document limits and signatures, package/relationship checks, macro/path rejection and generated visual-slide package structure. The real-browser `release` suite additionally processes a two-page PDF through all PDF and PowerPoint operations, checks output page/slide counts, ZIP contents and signatures, exercises editable text slides and image-free retention, and confirms malformed or oversized inputs get a visible reason. These fixtures establish that the workflows run, but do not replace review of representative real-world PDFs and PPTX files across Chrome, Edge and Firefox.
 
 ## Run it locally
 

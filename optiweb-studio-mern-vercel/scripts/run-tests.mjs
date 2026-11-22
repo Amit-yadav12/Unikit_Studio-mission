@@ -34,7 +34,7 @@ const SUITES = [
   { name: "security", script: "test:security", what: "source, dependencies, headers and build", needsBuild: true },
   { name: "function", script: "test:function", what: "Netlify function adapter" },
   { name: "a11y", script: "test:a11y", what: "accessibility of every page, rendered" },
-  { name: "release", script: "test:release", what: "exact capacities, ZIP lifecycle, memory-only privacy and responsive layouts", needsBuild: true, needsBrowser: true },
+  { name: "release", script: "test:release", what: "real-browser PDF/PPTX workflows, exact limits, ZIP lifecycle, privacy and responsive layouts", needsBuild: true, needsBrowser: true },
   { name: "browser", script: "test:browser", what: "real browser: files never leave the tab", needsBuild: true, needsBrowser: true },
 ];
 
