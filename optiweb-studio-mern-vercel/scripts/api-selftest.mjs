@@ -21,7 +21,7 @@
  * here. `npm run test:audit` covers the audit itself against a made-up site.
  */
 import http from "node:http";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { createChecker, fixture, startApi, UUID } from "./lib/selftest-kit.mjs";
@@ -223,13 +223,27 @@ section("the built app: pages, files and caching");
   check("the build contains the image worker and the AVIF codec as files of this site", Boolean(worker) && Boolean(wasm), assets.join(" ").slice(0, 300));
   const codec = await call(`/assets/${wasm}`);
   check("the codec is served as application/wasm, which a browser requires to compile it while it downloads", codec.status === 200 && codec.headers.get("content-type") === "application/wasm" && codec.bytes.subarray(0, 4).toString("latin1") === "\0asm", String(codec.headers.get("content-type")));
-  const expected = { "/favicon.svg": /svg/, "/site.webmanifest": /json/, "/robots.txt": /text\/plain/, "/theme.js": /javascript/, "/og-image.png": /image\/png/, "/icons/icon-192.png": /image\/png/, "/icons/apple-touch-icon.png": /image\/png/ };
+  const expected = { "/favicon.svg": /svg/, "/site.webmanifest": /json/, "/robots.txt": /text\/plain/, "/theme.js": /javascript/, "/og-image.png": /image\/png/, "/icons/icon-192.png": /image\/png/, "/icons/apple-touch-icon.png": /image\/png/, "/samples/alpine-ridge.jpg": /image\/jpeg/, "/samples/alpine-ridge.webp": /image\/webp/ };
   const missing = [];
   for (const [path, type] of Object.entries(expected)) {
     const response = await call(path);
     if (response.status !== 200 || !type.test(response.headers.get("content-type") ?? "") || response.bytes.length === 0) missing.push(`${path} → ${response.status} ${response.headers.get("content-type")}`);
   }
-  check("the favicon, manifest, robots file, theme script, social image and icons are served with their types", missing.length === 0, missing.join("; "));
+  check("the favicon, manifest, robots file, theme script, social image, icons and landing comparison images are served with their types", missing.length === 0, missing.join("; "));
+  const sample = JSON.parse(readFileSync(new URL("../src/generated/sample.json", import.meta.url), "utf8"));
+  const sampleJpeg = await call("/samples/alpine-ridge.jpg");
+  const sampleWebp = await call("/samples/alpine-ridge.webp");
+  const { readImageHeader } = await import("../src/shared/imageHeader.ts");
+  const jpegHeader = readImageHeader(new Uint8Array(sampleJpeg.bytes));
+  const webpHeader = readImageHeader(new Uint8Array(sampleWebp.bytes));
+  check(
+    "landing comparison sizes and dimensions are measured from the actual JPEG and WebP files",
+    sample.inputBytes === sampleJpeg.bytes.length && sample.outputBytes === sampleWebp.bytes.length &&
+      sampleJpeg.status === 200 && sampleWebp.status === 200 && jpegHeader?.format === "jpeg" && webpHeader?.format === "webp" &&
+      jpegHeader.width === sample.width && jpegHeader.height === sample.height && webpHeader.width === sample.width && webpHeader.height === sample.height &&
+      sample.outputBytes < sample.inputBytes,
+    `${sample.inputBytes}/${sampleJpeg.bytes.length} B JPEG; ${sample.outputBytes}/${sampleWebp.bytes.length} B WebP; expected ${sample.width}×${sample.height}`,
+  );
   const manifest = await call("/site.webmanifest");
   check("the manifest names the product", JSON.parse(manifest.bytes.toString("utf8")).name === "Unikit Studio");
   const missingAsset = await call("/assets/does-not-exist.js");

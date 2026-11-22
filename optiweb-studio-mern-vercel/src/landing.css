@@ -86,3 +86,4 @@
 .tool-card-top { color:var(--secondary); }
 .guide-items details[open] summary { color:#fff8aa; }
 @media (max-width:600px) { .privacy-proof { padding:12px 13px; } }
+.preview-fallback{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:8px;padding:16px;color:#d1cadb;text-align:center;font-size:12px;background:linear-gradient(135deg,#252038,#17151e)}.preview-fallback svg{color:#c1a7e7}

@@ -19,13 +19,12 @@ start in this sandbox.
   from component modules.
 - `npm run build`: passed. Output is `dist/`; CSS is about 58 KB; image and ZIP
   workers and AVIF/WebP WebAssembly codecs are emitted as same-origin assets.
-- `npm test`: all nine runnable suites passed (567 assertions across unit,
+- `npm test`: all nine runnable suites passed (568 assertions across unit,
   pipeline, UI model, optimizer DOM, audit, API, security/privacy, Netlify
   function and accessibility). The browser and release suites were skipped by
-  the default runner because no usable browser was available.
-- `npm test -- --browser`: the same nine suites passed; the two browser suites
-  failed before running assertions because Chromium cannot load the host's
-  missing `libnspr4.so` (and `libnss3.so` is also unavailable).
+  the default runner because no Chrome/Chromium executable is installed.
+- `npm test -- --browser` and `npm run test:release`: blocked before assertions
+  because the browser executable is unavailable in this environment.
 - `npm audit`: zero vulnerabilities after updating the lockfile; a clean `npm
   ci` continued to report zero. `npm audit --omit=dev`: zero vulnerabilities.
 - Local production smoke test:
@@ -44,7 +43,10 @@ The checked-in self-test fixtures were missing from this branch despite the
 fixture README and test references. Valid JPEG, PNG, WebP, AVIF, GIF and TIFF
 test files have been restored so the automated suites run from a clean checkout.
 Missing social-card and app-icon PNGs were also generated from the supplied
-circuit-U vector, preserving its blue-violet colors.
+circuit-U vector, preserving its blue-violet colors. The landing-page before/after
+preview now has real local JPEG and WebP samples again; its displayed dimensions,
+byte sizes and 50.3% reduction are measured from those files. The API suite checks
+that both samples are served and that the displayed metadata matches their bytes.
 
 ## Remaining before release
 
