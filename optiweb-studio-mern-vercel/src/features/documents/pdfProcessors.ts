@@ -46,10 +46,40 @@ function targetScale(width: number, height: number, target = TARGET_RASTER_EDGE)
   return Math.min(2.5, target / Math.max(width, height));
 }
 
+async function renderBalancedPdf(doc: Awaited<ReturnType<typeof loadPdf>>["doc"], quality: { maxEdge: number; jpegQuality: number }, onProgress?: Progress): Promise<Uint8Array> {
+  const out = await PDFDocument.create();
+  let renderedPixels = 0;
+  for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
+    const page = await doc.getPage(pageNo);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: targetScale(base.width, base.height, quality.maxEdge) });
+    const width = Math.ceil(viewport.width);
+    const height = Math.ceil(viewport.height);
+    assertCanvasBudget(width, height, renderedPixels);
+    renderedPixels += width * height;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Canvas rendering is unavailable in this browser.");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    await page.render({ canvas, canvasContext: context, viewport, background: "#ffffff", intent: "print" }).promise;
+    const jpeg = await outputCanvas(canvas, "jpeg", quality.jpegQuality);
+    const embedded = await out.embedJpg(await jpeg.arrayBuffer());
+    const outputPage = out.addPage([base.width, base.height]);
+    outputPage.drawImage(embedded, { x: 0, y: 0, width: base.width, height: base.height });
+    canvas.width = 1;
+    canvas.height = 1;
+    page.cleanup();
+    onProgress?.(pageNo, doc.numPages, `Rendering page ${pageNo} of ${doc.numPages}`);
+  }
+  return out.save({ useObjectStreams: true, addDefaultPage: false });
+}
+
 export async function compressPdf(file: File, mode: "lossless" | "balanced", onProgress?: Progress) {
   const start = performance.now();
   const { bytes, task, doc } = await loadPdf(file);
-  let renderedPixels = 0;
   try {
     if (hasPdfSignatureField(bytes)) return makeResult(bytes.byteLength, bytes, `${safeBaseName(file.name)}.pdf`, "application/pdf", start, { pagesOrSlides: doc.numPages, keptOriginal: true, notices: ["This PDF appears to contain a digital signature; optimization is skipped so the signed original remains unchanged."] });
     if (mode === "lossless") {
@@ -65,40 +95,35 @@ export async function compressPdf(file: File, mode: "lossless" | "balanced", onP
       });
     }
     if (doc.numPages > MAX_PDF_RENDER_PAGES) throw new Error(`Balanced compression is limited to ${MAX_PDF_RENDER_PAGES} pages to protect browser memory. Try lossless compression instead.`);
-    const out = await PDFDocument.create();
-    for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
-      const page = await doc.getPage(pageNo);
-      const base = page.getViewport({ scale: 1 });
-      const scale = targetScale(base.width, base.height, 2200);
-      const viewport = page.getViewport({ scale });
-      assertCanvasBudget(Math.ceil(viewport.width), Math.ceil(viewport.height), renderedPixels);
-      renderedPixels += Math.ceil(viewport.width) * Math.ceil(viewport.height);
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      const context = canvas.getContext("2d", { alpha: false });
-      if (!context) throw new Error("Canvas rendering is unavailable in this browser.");
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      const render = page.render({ canvas, canvasContext: context, viewport, background: "#ffffff", intent: "print" });
-      await render.promise;
-      const jpeg = await outputCanvas(canvas, "jpeg", 0.78);
-      const embedded = await out.embedJpg(await jpeg.arrayBuffer());
-      const result = out.addPage([base.width, base.height]);
-      result.drawImage(embedded, { x: 0, y: 0, width: base.width, height: base.height });
-      canvas.width = 1;
-      canvas.height = 1;
-      page.cleanup();
-      onProgress?.(pageNo, doc.numPages, `Rendering page ${pageNo} of ${doc.numPages}`);
+    const qualityLevels = [
+      { maxEdge: 2_200, jpegQuality: 0.78 },
+      { maxEdge: 1_800, jpegQuality: 0.68 },
+      { maxEdge: 1_400, jpegQuality: 0.56 },
+    ];
+    let output: Uint8Array | undefined;
+    let selectedQuality: (typeof qualityLevels)[number] | undefined;
+    for (const quality of qualityLevels) {
+      const candidate = await renderBalancedPdf(doc, quality, onProgress);
+      if (candidate.byteLength < bytes.byteLength && candidate.byteLength <= MAX_DOCUMENT_ARCHIVE_BYTES) {
+        output = candidate;
+        selectedQuality = quality;
+        break;
+      }
+      candidate.fill(0);
     }
-    const output = await out.save({ useObjectStreams: true, addDefaultPage: false });
-    if (output.byteLength > MAX_DOCUMENT_ARCHIVE_BYTES) throw new Error("The balanced PDF exceeds the 50 MB output safety limit.");
-    const smaller = output.byteLength < bytes.byteLength;
-    return makeResult(bytes.byteLength, smaller ? output : bytes, `${safeBaseName(file.name)}${smaller ? "-balanced" : ""}.pdf`, "application/pdf", start, {
+    const smaller = Boolean(output && selectedQuality);
+    const notices = [
+      "Balanced compression rasterizes each page to JPEG. Text, vector graphics, forms, accessibility data and document metadata are not preserved.",
+      ...(smaller && selectedQuality!.maxEdge < qualityLevels[0].maxEdge ? [`A lower raster resolution (${selectedQuality!.maxEdge}px maximum edge, JPEG quality ${Math.round(selectedQuality!.jpegQuality * 100)}%) was needed to make this file smaller.`] : []),
+      ...(!smaller ? ["Compression could not make this already compact or image-optimized PDF smaller within the safe quality and output limits, so the original is retained unchanged."] : []),
+    ];
+    const result = makeResult(bytes.byteLength, output ?? bytes, `${safeBaseName(file.name)}${smaller ? "-balanced" : ""}.pdf`, "application/pdf", start, {
       pagesOrSlides: doc.numPages,
       keptOriginal: !smaller,
-      notices: ["Balanced compression rasterizes each page to JPEG. Text, vector graphics, forms, accessibility data and document metadata are not preserved.", ...(smaller ? [] : ["The balanced output was not smaller; the original is retained unchanged."])],
+      notices,
     });
+    output?.fill(0);
+    return result;
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "The optimization failed.";
     return makeResult(bytes.byteLength, bytes, `${safeBaseName(file.name)}.pdf`, "application/pdf", start, {
