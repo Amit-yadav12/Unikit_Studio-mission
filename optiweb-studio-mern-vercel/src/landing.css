@@ -133,3 +133,14 @@
 :root[data-theme="light"] .studio-preview figcaption > span {
   color: #554184;
 }
+
+/* Open FAQ questions use the same readable accent in day mode. */
+:root[data-theme="light"] .guide-items details[open] summary {
+  color: #745500;
+}
+
+/* The small gold section and card markers need the same light-mode contrast. */
+:root[data-theme="light"] .section-kicker,
+:root[data-theme="light"] .tool-card-top b {
+  color: #745500;
+}
