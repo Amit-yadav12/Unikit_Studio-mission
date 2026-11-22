@@ -87,3 +87,49 @@
 .guide-items details[open] summary { color:#fff8aa; }
 @media (max-width:600px) { .privacy-proof { padding:12px 13px; } }
 .preview-fallback{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:8px;padding:16px;color:#d1cadb;text-align:center;font-size:12px;background:linear-gradient(135deg,#252038,#17151e)}.preview-fallback svg{color:#c1a7e7}
+
+/* Keep the comparison panel readable when the site is in light/day mode. */
+:root[data-theme="light"] .studio-preview {
+  color: #152b4e;
+  background-color: #fff;
+  background-image: linear-gradient(145deg, rgb(21 43 78 / 0.025), transparent 58%);
+  border-color: #b9cce0;
+  box-shadow: 0 20px 54px -34px rgb(20 42 75 / 0.28), 0 0 0 5px rgb(31 101 180 / 0.04);
+}
+:root[data-theme="light"] .preview-title svg,
+:root[data-theme="light"] .preview-file svg {
+  color: #5b45a0;
+}
+:root[data-theme="light"] .preview-title small {
+  color: #4a5d76;
+}
+:root[data-theme="light"] .preview-file,
+:root[data-theme="light"] .preview-file > span {
+  color: #435a76;
+}
+:root[data-theme="light"] .preview-measures {
+  border-top-color: #c7d5e5;
+}
+:root[data-theme="light"] .preview-measures > div {
+  border-right-color: #c7d5e5;
+}
+:root[data-theme="light"] .preview-measures dt {
+  color: #455b76;
+}
+:root[data-theme="light"] .preview-measures dd {
+  color: #142b4a;
+}
+:root[data-theme="light"] .preview-measures > div:last-child {
+  background: linear-gradient(180deg, rgb(116 85 0 / 0.055), transparent);
+}
+:root[data-theme="light"] .preview-measures .measure-saving {
+  color: #745500;
+}
+:root[data-theme="light"] .studio-preview figcaption {
+  color: #435a76;
+  border-top-color: #c7d5e5;
+  background: #f6f9fd;
+}
+:root[data-theme="light"] .studio-preview figcaption > span {
+  color: #554184;
+}
