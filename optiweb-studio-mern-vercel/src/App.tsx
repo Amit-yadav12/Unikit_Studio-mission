@@ -8,6 +8,7 @@ import LandingPage from "@/pages/LandingPage";
 const workspace = () => import("@/pages/WorkspacePages");
 const OverviewPage = lazy(() => workspace().then((module) => ({ default: module.OverviewPage })));
 const ImagePage = lazy(() => workspace().then((module) => ({ default: module.ImagePage })));
+const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
 const FontsPage = lazy(() => workspace().then((module) => ({ default: module.FontsPage })));
 const AssetsPage = lazy(() => workspace().then((module) => ({ default: module.AssetsPage })));
 const AuditPage = lazy(() => workspace().then((module) => ({ default: module.AuditPage })));
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/app" element={<OverviewPage />} />
             <Route path="/app/images" element={<ImagePage />} />
+            <Route path="/app/documents" element={<DocumentsPage />} />
             <Route path="/app/fonts" element={<FontsPage />} />
             <Route path="/app/assets" element={<AssetsPage />} />
             <Route path="/app/audit" element={<AuditPage />} />

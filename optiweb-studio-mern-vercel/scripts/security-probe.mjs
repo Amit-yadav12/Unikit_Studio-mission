@@ -102,7 +102,7 @@ section(`browser code (${browserFiles.length} files): nothing that could send a 
   const session = usesOf(browserCode, /\bsessionStorage\b/).filter((file) => !/SettingsForm/.test(file));
   check("localStorage holds settings and theme only; processing writes no sessionStorage", local.join() === "src/components/ui/ThemeToggle.tsx,src/lib/preferences.ts" && session.length === 0, `${local.join(",")} | ${session.join(",")}`);
   const literals = [...browserCode].flatMap(([file, text]) => [...text.matchAll(/https?:\/\/[A-Za-z0-9.-]+/g)].map((match) => `${file}: ${match[0]}`));
-  const unexpected = literals.filter((entry) => !/https:\/\/example\.com$|http:\/\/ns\.adobe\.com$|http:\/\/www\.w3\.org$/.test(entry));
+  const unexpected = literals.filter((entry) => !/https:\/\/example\.com$|http:\/\/ns\.adobe\.com$|http:\/\/www\.w3\.org$|http:\/\/schemas\.openxmlformats\.org$/.test(entry));
   check("no address of another site appears in browser code, apart from a placeholder and XML namespaces", unexpected.length === 0, unexpected.join("; "));
   const html = read("index.html");
   const references = [...html.matchAll(/\b(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
@@ -159,7 +159,7 @@ section("dependencies: nothing that stores, uploads or decodes on a server");
   check(`neither does anything in the lockfile (${installed.length} packages)`, installed.length > 100 && installed.filter((name) => banned.test(name)).length === 0, [...new Set(installed.filter((name) => banned.test(name)))].join(", "));
   check("the lockfile is for this package", lock.name === manifest.name && lock.packages[""].version === manifest.version && manifest.name === "unikit-studio");
   const runtime = Object.keys(manifest.dependencies ?? {}).sort();
-  check("runtime dependencies are the ones the app uses, and no more", runtime.join() === "@fontsource-variable/inter,@fontsource/jetbrains-mono,@jsquash/avif,@jsquash/webp,dotenv,express,jszip,lucide-react,node-html-parser,postcss,react,react-dom,react-router-dom,serverless-http,zod", runtime.join());
+  check("runtime dependencies are the ones the app uses, and no more", runtime.join() === "@aiden0z/pptx-renderer,@fontsource-variable/inter,@fontsource/jetbrains-mono,@jsquash/avif,@jsquash/webp,dotenv,express,html2canvas,jszip,lucide-react,node-html-parser,pdf-lib,pdfjs-dist,postcss,react,react-dom,react-router-dom,serverless-http,zod", runtime.join());
   const scripts = Object.keys(manifest.scripts);
   check("no script refers to a file that does not exist", scripts.every((name) => [...manifest.scripts[name].matchAll(/scripts\/[\w./-]+\.mjs|src\/[\w./-]+\.ts/g)].every((match) => existsSync(path.join(appDir, match[0])))), scripts.filter((name) => ![...manifest.scripts[name].matchAll(/scripts\/[\w./-]+\.mjs|src\/[\w./-]+\.ts/g)].every((match) => existsSync(path.join(appDir, match[0])))).join(", "));
 }
@@ -205,7 +205,7 @@ const { SECURITY_HEADERS, CONTENT_SECURITY_POLICY } = await import("../src/serve
   const runner = read("scripts/run-tests.mjs");
   const notInCi = suites.filter((name) => !workflow.includes(`run: npm run ${name}\n`));
   const notInRunner = suites.filter((name) => !runner.includes(`script: "${name}"`));
-  check(`every test suite (${suites.length}) is run by CI and by \`npm test\``, suites.length === 11 && notInCi.length === 0 && notInRunner.length === 0, `not in CI: ${notInCi.join(", ") || "none"}; not in npm test: ${notInRunner.join(", ") || "none"}`);
+  check(`every test suite (${suites.length}) is run by CI and by \`npm test\``, suites.length === 12 && notInCi.length === 0 && notInRunner.length === 0, `not in CI: ${notInCi.join(", ") || "none"}; not in npm test: ${notInRunner.join(", ") || "none"}`);
   check("CI runs the browser suite in Chrome's headless shell, which sends nothing of its own", /@puppeteer\/browsers install chrome-headless-shell@stable/.test(workflow) && /CHROME_PATH: \$\{\{ steps\.browser\.outputs\.path \}\}\n {8}run: npm run test:browser\n/.test(workflow));
   check("CI also runs the smoke test against the started server, and against the deployed site on main", /node scripts\/deployed-smoke\.mjs http:\/\/127\.0\.0\.1:5000 --expect-build/.test(workflow) && /node scripts\/deployed-smoke\.mjs "\$url" --expect-build --wait 600/.test(workflow));
 }
@@ -222,9 +222,10 @@ if (!existsSync(path.join(appDir, "dist", "index.html"))) {
       hosts.set(match[1], [...(hosts.get(match[1]) ?? []), file]);
     }
   }
-  // Text that names a site without the page ever contacting it: XML namespaces, links in error messages of libraries, a placeholder.
+  // Text that names a site without the page ever contacting it: XML namespaces, links in error messages/documentation of bundled libraries, a placeholder.
   const inert = new Set([
-    "www.w3.org", "ns.adobe.com", // XML namespaces
+    "www.w3.org", "ns.adobe.com", "schemas.openxmlformats.org", "schemas.microsoft.com", "purl.oclc.org", // XML namespaces / schema identifiers
+    "hertzen.com", "html2canvas.hertzen.com", "foo.bar", // renderer documentation and non-routable example names
     "example.com", // the placeholder in the audit's URL field
     "react.dev", "reactrouter.com", // links inside error messages of React and React Router
     "stuk.github.io", "stuartk.com", "raw.github.com", "github.com", // JSZip's licence banner and error messages

@@ -1,9 +1,10 @@
 "use client";
 import {Link} from "react-router-dom";
 import { useEffect, useRef } from "react";
-import { ChevronDown, FileImage, Type, Layers3, Globe } from "lucide-react";
+import { ChevronDown, FileImage, FileStack, Type, Layers3, Globe } from "lucide-react";
 const links = [
   { name: "Image Optimizer", href: "/app/images", Icon: FileImage },
+  { name: "PDF & PowerPoint Studio", href: "/app/documents", Icon: FileStack },
   { name: "Font Optimizer", href: "/app/fonts", Icon: Type },
   { name: "Asset Analyzer", href: "/app/assets", Icon: Layers3 },
   { name: "Website Audit", href: "/app/audit", Icon: Globe },

@@ -188,6 +188,7 @@ const PAGES = [
   ["/", "Less weight. More impact."],
   ["/app", "Your files stay on this device."],
   ["/app/images", "Image Optimizer"],
+  ["/app/documents", "PDF & PowerPoint Studio"],
   ["/app/fonts", "Font Optimizer"],
   ["/app/assets", "Asset Analyzer"],
   ["/app/audit", "Website Performance Audit"],

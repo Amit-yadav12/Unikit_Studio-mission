@@ -123,7 +123,7 @@ try {
 
   for (const width of [360, 390, 768, 1366]) {
     await page.setViewportSize({ width, height: 844 });
-    for (const path of ["/", "/app/images", "/app/fonts", "/app/assets", "/app/audit", "/app/settings"]) {
+    for (const path of ["/", "/app/images", "/app/documents", "/app/fonts", "/app/assets", "/app/audit", "/app/settings"]) {
       await page.goto(base + path, { waitUntil: "domcontentloaded" });
       await page.waitForSelector("h1");
       check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${path} has no horizontal overflow at ${width}px`);
