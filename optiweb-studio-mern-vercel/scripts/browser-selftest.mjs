@@ -839,7 +839,7 @@ try {
 
   section("P12f · The new name is everywhere and the old one is nowhere");
   const texts = {};
-  for (const path of ["/", "/app", "/app/images", "/app/fonts", "/app/assets", "/app/audit", "/app/settings", "/app/history", "/app/usage"]) {
+  for (const path of ["/", "/app", "/app/images", "/app/documents", "/app/fonts", "/app/assets", "/app/audit", "/app/settings", "/app/history", "/app/usage"]) {
     await tab.goto(`${api.base}${path}`, { waitUntil: "networkidle0" });
     texts[path] = await tab.evaluate(() => `${document.title}\n${document.body.innerText}\n${document.documentElement.outerHTML}`);
   }

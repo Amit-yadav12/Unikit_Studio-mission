@@ -1,7 +1,7 @@
 import { useId } from "react";
 
 /** Technical drawings for each utility: image planes, type metrics, asset layers and a timing trace. */
-export function ToolArt({kind}:{kind:"images"|"fonts"|"assets"|"audit"}) {
+export function ToolArt({kind}:{kind:"images"|"documents"|"fonts"|"assets"|"audit"}) {
   const id=useId().replace(/:/g, "");
   const line=`url(#line${id})`, fill=`url(#fill${id})`;
   return <svg viewBox="0 0 270 112" fill="none" className="tool-art" aria-hidden="true">
@@ -10,6 +10,7 @@ export function ToolArt({kind}:{kind:"images"|"fonts"|"assets"|"audit"}) {
       <g transform="rotate(-13 49 43)"><rect x="-3" y="2" width="91" height="64" rx="7" fill="#1c1729" stroke="#56436b"/><rect x="6" y="9" width="73" height="47" rx="3" stroke="#403050"/></g>
       <g transform="rotate(7 50 50)"><rect x="14" y="10" width="90" height="64" rx="7" fill={fill} stroke={line} strokeWidth="1.6"/><path d="m22 62 25-25 15 16 11-10 23 22H22z" fill="#3978bf" opacity=".65"/><path d="m22 62 25-25 15 16 11-10 23 22" stroke="#a6d6ff" strokeWidth="1.6"/><circle cx="78" cy="28" r="6.5" fill="#c7e5ff"/></g>
       <path d="M-21 27h18m-27 8h22m-29 8h25" stroke="#765b92" strokeLinecap="round"/></g> : null}
+    {kind==="documents" ? <g transform="translate(82 12)" strokeLinejoin="round"><g transform="rotate(-7 55 45)"><rect x="15" y="8" width="92" height="76" rx="3" fill="#1c1729" stroke="#70528d"/><path d="M30 28h56M30 40h59M30 52h47M30 64h56" stroke="#6e5b84" strokeDasharray="2 3"/></g><g transform="rotate(6 66 50)"><rect x="31" y="18" width="92" height="76" rx="3" fill={fill} stroke={line} strokeWidth="1.5"/><path d="M46 38h56M46 50h59M46 62h47M46 74h56" stroke="#82b8eb" strokeDasharray="2 3"/><path d="M96 18v20h27" fill="#264d77" stroke={line}/></g></g>:null}
     {kind==="fonts" ? <g>
       <path d="M62 30h149M62 58h149M62 87h149" stroke="#594169" strokeDasharray="3 4"/><path d="M76 17v81M194 17v81" stroke="#493551"/>
       <text x="84" y="84" fontFamily="Georgia, 'Times New Roman', serif" fontSize="79" letterSpacing="-6" fill={line}>Aa</text>

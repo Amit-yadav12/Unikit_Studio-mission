@@ -77,6 +77,10 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: npm run test:ui
 
+      - name: Document signatures, ZIP limits, OOXML and visual-slide packages
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:documents
+
       - name: Image Optimizer screen in a DOM
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: npm run test:dom

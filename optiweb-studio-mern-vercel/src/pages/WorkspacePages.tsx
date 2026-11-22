@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, FileCode2, Globe, ImageDown, ScanSearch, ShieldCheck } from "lucide-react";
+import { ArrowRight, FileCode2, FileStack, Globe, ImageDown, ScanSearch, ShieldCheck } from "lucide-react";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { ButtonLink } from "@/components/ui/Button";
 import { PageHeader, Panel, PanelHeader, StatStrip } from "@/components/ui/Layout";
@@ -91,6 +91,7 @@ export function SettingsPage() {
 
 const TOOLS = [
   { title: "Image Optimizer", desc: "Convert to WebP, AVIF, JPEG or PNG and compare real output bytes.", href: "/app/images", icon: ImageDown, where: "runs in this browser" },
+  { title: "Documents", desc: "Compress and convert PDF and PowerPoint files locally.", href: "/app/documents", icon: FileStack, where: "runs in this browser" },
   { title: "Font Optimizer", desc: "Find and patch @font-face rules that lack font-display.", href: "/app/fonts", icon: FileCode2, where: "runs in this browser" },
   { title: "Asset Analyzer", desc: "Read dimensions, weight and metadata from file headers.", href: "/app/assets", icon: ScanSearch, where: "runs in this browser" },
   { title: "Website Audit", desc: "Inspect a public page and the assets it names.", href: "/app/audit", icon: Globe, where: "the server fetches the URL" },
@@ -105,7 +106,7 @@ export function OverviewPage() {
     <WorkspaceShell title="Overview" context="Web-asset tools that run in your browser" actions={<ButtonLink href="/app/images" variant="primary" size="sm" leading={<ImageDown className="size-3.5" aria-hidden />}>Optimize images</ButtonLink>}>
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <PageHeader eyebrow="Workspace" title="Your files stay on this device." description="Image conversion, font-loading checks and asset diagnostics, carried out by your browser. Nothing you select is uploaded." />
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {TOOLS.map((item) => (
             <Link key={item.href} to={item.href} className="group border border-line bg-surface p-5 transition-colors hover:border-accent-border hover:bg-surface-sunken/40">
               <div className="flex items-center justify-between">

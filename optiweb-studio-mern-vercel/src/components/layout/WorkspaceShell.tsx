@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { Gauge, Globe, ImageDown, Menu, ScanSearch, Settings2, Type, X } from "lucide-react";
+import { FileStack, Gauge, Globe, ImageDown, Menu, ScanSearch, Settings2, Type, X } from "lucide-react";
 import { Wordmark } from "@/components/brand/ProductMark";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { usePreferences } from "@/lib/preferences";
@@ -15,6 +15,7 @@ const NAV_GROUPS: Array<{
     items: [
       { href: "/app", label: "Overview", icon: Gauge, hint: "The tools, and how your files are handled" },
       { href: "/app/images", label: "Image Optimizer", icon: ImageDown, hint: "Convert and compress images" },
+      { href: "/app/documents", label: "Documents", icon: FileStack, hint: "Process PDFs and PowerPoint locally" },
       { href: "/app/fonts", label: "Font Optimizer", icon: Type, hint: "Audit and patch font-display" },
       { href: "/app/assets", label: "Asset Analyzer", icon: ScanSearch, hint: "Inspect files on this device" },
       { href: "/app/audit", label: "Website Audit", icon: Globe, hint: "Inspect a public page and its assets" },

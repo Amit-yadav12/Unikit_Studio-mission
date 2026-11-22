@@ -115,6 +115,8 @@ check("the page is Unikit Studio", /<title>Unikit Studio\b/.test(home.text), /<t
 
 const deepLink = await request("/app/images");
 check("a deep link (/app/images) loads the same app", deepLink.status === 200 && served !== null && deepLink.text.includes(served), seen(deepLink));
+const documentsLink = await request("/app/documents");
+check("the Documents Studio deep link loads the same app shell", documentsLink.status === 200 && served !== null && documentsLink.text.includes(served), seen(documentsLink));
 
 const policy = home.headers.get("content-security-policy") ?? "";
 const directive = (name) => new RegExp(`(?:^|;)\\s*${name}\\s+([^;]*)`).exec(policy)?.[1]?.trim() ?? null;
@@ -122,7 +124,7 @@ check("the page is sent with a content security policy", policy.length > 0, "no 
 check("the policy lets the page connect to its own origin only, so no file can be sent anywhere else", directive("connect-src") === "'self'" && directive("default-src") === "'self'" && directive("form-action") === "'self'", policy.slice(0, 200));
 check("the policy allows the image codec (WebAssembly) and no script from elsewhere", directive("script-src") === "'self' 'wasm-unsafe-eval'" && directive("object-src") === "'none'", directive("script-src") ?? "no script-src");
 check("the page cannot be framed, and content types are not guessed", directive("frame-ancestors") === "'none'" && home.headers.get("x-content-type-options") === "nosniff");
-check("the page sets no cookie", home.headers.get("set-cookie") === null && deepLink.headers.get("set-cookie") === null);
+check("the page sets no cookie", home.headers.get("set-cookie") === null && deepLink.headers.get("set-cookie") === null && documentsLink.headers.get("set-cookie") === null);
 
 const missing = await request(`/assets/not-in-this-build-${Date.now().toString(36)}.js`);
 check("a build file that does not exist is a 404, not the app's page", missing.status === 404 && !/html/.test(missing.type), seen(missing));

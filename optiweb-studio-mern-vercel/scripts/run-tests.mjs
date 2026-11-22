@@ -27,6 +27,7 @@ const SUITES = [
   { name: "unit", script: "test:unit", what: "header parser, pre-decode check, planner, CSS and asset analysis, settings" },
   { name: "pipeline", script: "test:pipeline", what: "image pipeline steps and engine scheduling" },
   { name: "ui", script: "test:ui", what: "result model: sizes, savings, kept originals, totals" },
+  { name: "documents", script: "test:documents", what: "document size guards, signature checks, OOXML safety, generated image slides" },
   { name: "dom", script: "test:dom", what: "Image Optimizer screen in a DOM" },
   { name: "audit", script: "test:audit", what: "website audit against a made-up site" },
   { name: "api", script: "test:api", what: "HTTP contract of the server", needsBuild: true },

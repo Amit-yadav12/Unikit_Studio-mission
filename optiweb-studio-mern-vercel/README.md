@@ -1,12 +1,13 @@
 # Unikit Studio
 
-Web-asset tools that run in your browser. Images are converted, stylesheets are
-patched and asset files are inspected by the page itself: the files you select
-are never uploaded.
+Web and document tools that run in your browser. Images and documents are
+converted locally, stylesheets are patched and asset files are inspected by the
+page itself: selected files are never uploaded.
 
 | Tool | What it does | Where it runs |
 | --- | --- | --- |
 | Image Optimizer | Re-encodes images to WebP, AVIF, JPEG or PNG, caps dimensions, reports real output sizes, builds a ZIP | Your browser (a Web Worker of the tab) |
+| PDF & PowerPoint Studio | Compresses and converts PDF and modern PPTX documents, checks real output sizes and creates local downloads | Your browser tab (memory only) |
 | Font Optimizer | Finds `@font-face` rules without `font-display`, shows the exact change, gives the patched stylesheet | Your browser |
 | Asset Analyzer | Reads format, dimensions, weight and metadata from file headers | Your browser |
 | Website Audit | Fetches a public page and reports the resources it names | The server: a browser may not read another site's pages |
@@ -96,6 +97,21 @@ What the conversion does to a file, so there are no surprises:
   rather than flattened to one frame.
 - JPEG has no transparency: transparent areas become white.
 
+## PDF & PowerPoint Studio
+
+The Documents section processes one PDF or `.pptx` at a time in browser memory. Individual document inputs are capped at 15 MB. It does not support legacy `.ppt`, encrypted PDFs, macro-enabled PowerPoint packages, split/ZIP64 PPTX archives, or password-protected content. The documents code has separate archive, entry-count, expanded-size, media-size, page-count, slide-count and pixel limits: 4,000 ZIP entries; 32 MB per expanded entry; 128 MB expanded total; 96 MB expanded media; 200:1 maximum expansion for entries larger than 1 MB; and 50 MB maximum generated archives. Raster work is capped at 12 MP per rendered page and 100 MP total. These limits do not change the Image Optimizer's independent 50 MB ZIP limit.
+
+- **PDF compression:** Lossless mode rewrites the PDF structure and keeps the input unchanged if the saved PDF is not strictly smaller or the rewrite fails. Balanced mode rasterizes pages to JPEG; this can remove searchable text, vectors, form fields, accessibility structure and metadata. Its original is kept if the output does not save bytes.
+- **PDF pages to images:** Renders each page in order as PNG or JPEG and downloads the set as a local ZIP. The browser enforces a page/pixel cap.
+- **Images to PDF:** Combines 1–20 signature-checked PNG/JPEG images, with a 15 MB aggregate input limit, 24 MP per image and 80 MP total, into a PDF.
+- **PDF to PowerPoint:** Each PDF page becomes a full-slide raster image. This is explicitly a visual deck, not editable text or PowerPoint objects.
+- **PowerPoint optimization:** Re-encodes only supported embedded PNG/JPEG raster images when the replacement is smaller. Other package content is preserved; if the final PPTX is not strictly smaller, the original package is kept. Digital-signature packages are refused because any package edit would invalidate the signature.
+- **PowerPoint to PDF:** Uses a browser-compatible PPTX importer and renderer (not a slide-generation library), then captures the rendered slides as static PDF pages in source order. External relationships are blocked. Renderer limitations can affect fonts, tables, charts, SmartArt, 3D effects and embedded objects; the output includes notices and should be reviewed. Animation, transitions, linked media and interactive content are not exported.
+
+Input signatures, file extensions and MIME types are cross-checked. PPTX ZIP central/local metadata, entry paths, duplicates, CRCs, XML parts and internal relationships are checked before use. XML entities/DOCTYPEs, path traversal, symbolic links, encrypted/split/ZIP64 packages and excessive archive expansion are refused. Macros are never executed. Rendering uses explicit page, slide and pixel budgets; workers, renderer resources, temporary buffers and download object URLs are cleaned up. Outputs and file names are never sent to an API, placed in browser storage, or retained as history.
+
+The `documents` suite exercises document limits and signatures, package/relationship checks, macro/path rejection and generated visual-slide package structure. It does not replace validation in Chrome/Edge/Firefox or review of representative real PDFs and PPTX files.
+
 ## Run it locally
 
 Requires Node 22.
@@ -128,6 +144,7 @@ npm test -- unit api     # only the named suites
 | unit | `npm run test:unit` | Image header parser against real files, checks before decoding, planner, CSS and asset analysis, settings |
 | pipeline | `npm run test:pipeline` | The steps of the image pipeline and the engine's scheduling, cancelling and fallback |
 | ui | `npm run test:ui` | The result model: sizes, savings, kept originals, totals |
+| documents | `npm run test:documents` | Document size/signature checks, archive expansion guards, OOXML validation and generated visual slides |
 | dom | `npm run test:dom` | The Image Optimizer screen in a simulated DOM, including ZIP size and memory caps |
 | audit | `npm run test:audit` | The website audit and its limits against a made-up site, with no network |
 | api | `npm run test:api` | The HTTP contract: what is answered, what is refused, no cookies, no upload |
