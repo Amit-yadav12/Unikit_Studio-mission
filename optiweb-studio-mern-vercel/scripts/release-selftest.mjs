@@ -3,37 +3,71 @@
  * Requires PLAYWRIGHT_MODULE or a local playwright installation and Chromium.
  */
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import JSZip from "jszip";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-const base = process.argv[2] || "http://127.0.0.1:4173";
+const base = process.argv[2] || process.env.RELEASE_BASE_URL || "http://127.0.0.1:4173";
 const work = await mkdtemp(join(tmpdir(), "unikit-release-"));
-const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined });
-const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, acceptDownloads: true });
-const page = await context.newPage();
+let ownedServer;
+let browser;
+let page;
+
+async function ensureProductionServer() {
+  try {
+    const response = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1500) });
+    if (response.ok) return;
+  } catch { /* start the local production build below */ }
+  if (process.argv[2] || process.env.RELEASE_BASE_URL) throw new Error(`The requested release server is not responding at ${base}.`);
+  const server = new URL(base);
+  ownedServer = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
+    cwd: process.cwd(),
+    env: { ...process.env, NODE_ENV: "production", PORT: server.port || "4173" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let logs = "";
+  ownedServer.stdout.on("data", (chunk) => { logs = (logs + chunk).slice(-8000); });
+  ownedServer.stderr.on("data", (chunk) => { logs = (logs + chunk).slice(-8000); });
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (ownedServer.exitCode !== null) throw new Error(`The release test server exited early. ${logs}`);
+    try {
+      const response = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1000) });
+      if (response.ok) return;
+    } catch { /* server is still starting */ }
+    await delay(250);
+  }
+  throw new Error(`The release test server did not become healthy at ${base}. ${logs}`);
+}
 const writes = [];
 const downloads = [];
 const errors = [];
-page.on("request", (request) => {
-  if (!["GET", "HEAD"].includes(request.method())) writes.push({ path: new URL(request.url()).pathname, bytes: request.postDataBuffer()?.length ?? 0, type: request.headers()["content-type"] });
-});
-page.on("download", (download) => downloads.push(download));
-page.on("pageerror", (error) => errors.push(error.message));
 let checks = 0;
 const check = (condition, message) => { assert.ok(condition, message); console.log(`✓ ${message}`); checks += 1; };
 const fixture = (name, mimeType, buffer) => ({ name, mimeType, buffer });
 const photo = await readFile(new URL("../public/samples/alpine-ridge.jpg", import.meta.url));
 const small = (suffix) => fixture(`small-${suffix}.jpg`, "image/jpeg", photo);
 const clear = async () => { if (await page.getByRole("button", { name: "Clear all", exact: true }).count()) await page.getByRole("button", { name: "Clear all", exact: true }).click(); };
-const go = async (path) => { await page.goto(base + path, { waitUntil: "domcontentloaded" }); await page.locator("input[type=file]").first().waitFor(); };
+const go = async (path) => { await page.goto(base + path, { waitUntil: "domcontentloaded" }); await page.locator("h1").waitFor({ state: "visible" }); await page.locator("input[type=file]").first().waitFor({ state: "attached" }); };
 const waitQueue = () => page.locator('[data-testid="queue"] li').first().waitFor();
 const save = async () => { const file = await downloads.at(-1).path(); return readFile(file); };
 const storage = () => page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }));
 
 try {
+  await ensureProductionServer();
+  const launched = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined });
+  browser = launched;
+  const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, acceptDownloads: true });
+  page = await context.newPage();
+  page.on("request", (request) => {
+    if (!["GET", "HEAD"].includes(request.method())) writes.push({ path: new URL(request.url()).pathname, bytes: request.postDataBuffer()?.length ?? 0, type: request.headers()["content-type"] });
+  });
+  page.on("download", (download) => downloads.push(download));
+  page.on("pageerror", (error) => errors.push(error.message));
+
   await go("/app/images");
   await page.locator('input[type="file"]').setInputFiles(Array.from({ length: 6 }, (_, index) => small(index + 1)));
   await waitQueue();
@@ -131,6 +165,11 @@ try {
   }
   console.log(`\n${checks} elite release checks passed.`);
 } finally {
-  await browser.close();
+  if (browser) await browser.close();
+  if (ownedServer && ownedServer.exitCode === null) {
+    ownedServer.kill("SIGTERM");
+    await Promise.race([new Promise((resolve) => ownedServer.once("exit", resolve)), delay(3000)]);
+    if (ownedServer.exitCode === null) ownedServer.kill("SIGKILL");
+  }
   await rm(work, { recursive: true, force: true });
 }
