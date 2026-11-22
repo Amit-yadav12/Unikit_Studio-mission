@@ -566,8 +566,12 @@ try {
   check("for an opaque photo, JPEG is one of the formats compared", photoCard?.lines.some((line) => /^JPEG at quality/.test(line) && !/not tried/.test(line)), JSON.stringify(photoCard?.lines));
   const alphaRow = table.find((entry) => entry.name === "alpha-320x200.png");
   const alphaOut = await saveRow(tab, alphaRow.output);
-  const alphaPixels = await decodeInPage(tab, alphaOut.bytes, [[0.02, 0.02], [0.5, 0.5]]);
-  check("transparency survives: the corner is still transparent and the centre opaque", alphaPixels.pixels[0][3] === 0 && alphaPixels.pixels[1][3] === 255, JSON.stringify(alphaPixels.pixels));
+  const alphaPoints = [[0.02, 0.02], [0.5, 0.5]];
+  const alphaPixels = await decodeInPage(tab, alphaOut.bytes, alphaPoints);
+  const alphaOriginal = await decodeInPage(tab, readFileSync(fixturePath("alpha-320x200.png")), alphaPoints);
+  const sourceCentreAlpha = alphaOriginal.pixels[1][3];
+  const outputCentreAlpha = alphaPixels.pixels[1][3];
+  check("transparency survives: the corner remains clear and the soft disc centre retains its source opacity", alphaPixels.pixels[0][3] === 0 && Math.abs(outputCentreAlpha - sourceCentreAlpha) <= 8 && outputCentreAlpha >= 240, JSON.stringify({ source: alphaOriginal.pixels, output: alphaPixels.pixels }));
   // Single → JPEG on the same transparent image fills with white, and says so.
   await choose(tab, "Optimization strategy", "Single");
   await choose(tab, "Output format", "JPEG");
