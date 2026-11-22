@@ -1,0 +1,209 @@
+name: CI
+
+# Builds the app and runs every automated check. Nothing here needs a
+# database, a storage account or a secret: the app has none of them.
+#
+# The browser test drives the production build in Chrome's headless shell. It
+# is the check that a selected file never leaves the tab.
+#
+# Once the build succeeds, every test step runs even if an earlier one failed,
+# so a single run reports all failures.
+#
+# A second job then checks the app where it is deployed: that the site serves
+# the build of this commit, with the API of this version beside it.
+#   - On `main` it checks production.
+#   - On any other branch it checks the deploy previews that the hosts built
+#     for the commit, so a pull request is checked on the hosts before it is
+#     merged.
+#   - Started by hand with an address, it checks that address.
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Deployed site to check instead of production. Several addresses may be given, separated by spaces."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event.inputs.url && 'site' || 'push' }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: optiweb-studio-mern-vercel
+
+jobs:
+  verify:
+    name: Build, static checks and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: optiweb-studio-mern-vercel/.nvmrc
+          cache: npm
+          cache-dependency-path: optiweb-studio-mern-vercel/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        id: build
+        run: npm run build
+
+      - name: Core logic (image headers, checks before decoding, planner, CSS and asset analysis)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:unit
+
+      - name: Image pipeline steps and engine scheduling
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:pipeline
+
+      - name: Result model (sizes, savings, kept originals, totals)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:ui
+
+      - name: Image Optimizer screen in a DOM
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:dom
+
+      - name: Website audit limits against a made-up site (no network)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:audit
+
+      - name: HTTP contract of the server (no uploads, no cookies, no storage)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:api
+
+      - name: Security probe (source, dependencies, headers, build)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:security
+
+      - name: Netlify function adapter
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:function
+
+      - name: Accessibility (structure of every page, colour contrast)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:a11y
+
+      # The browser test asserts what the browser sends. The Google Chrome on the
+      # runner also calls Google's services on its own account, and gains new ones
+      # with its updates. Chrome's headless shell is the same engine, published by
+      # the Chrome team for testing, without the browser around it: it sends
+      # nothing of its own, so the assertion needs no exceptions.
+      - name: Install the test browser (Chrome's headless shell)
+        id: browser
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          path="$(npx --no-install @puppeteer/browsers install chrome-headless-shell@stable --path "$RUNNER_TEMP/browsers" --format '{{path}}' | tail -n 1)"
+          test -x "$path"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: Elite release checks (exact capacities, verified ZIP and no-storage privacy)
+        if: ${{ !cancelled() && steps.browser.outcome == 'success' }}
+        env:
+          CHROME_PATH: ${{ steps.browser.outputs.path }}
+        run: npm run test:release
+
+      - name: Real browser (files never leave the tab; real outputs, sizes and limits)
+        if: ${{ !cancelled() && steps.browser.outcome == 'success' }}
+        env:
+          CHROME_PATH: ${{ steps.browser.outputs.path }}
+        run: npm run test:browser
+
+      # The check that the deployed-site job runs, here against the server
+      # started the way a Node host starts it.
+      - name: Smoke test against the started server
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          NODE_ENV: production
+          PORT: "5000"
+        run: |
+          npm start > server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null http://127.0.0.1:5000/api/health; then break; fi
+            sleep 1
+          done
+          set +e
+          node scripts/deployed-smoke.mjs http://127.0.0.1:5000 --expect-build
+          SMOKE=$?
+          set -e
+          echo "----- server log -----"
+          cat server.log
+          exit "$SMOKE"
+
+  deployed:
+    name: Deployed site serves this build
+    # The hosting providers deploy in parallel with this workflow, so this job
+    # waits for them. Run the workflow by hand on `main` to check production
+    # again at any time, or with an address to check another site against the
+    # build of the chosen branch.
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      # To read which deploy previews the hosts reported on the commit.
+      statuses: read
+    env:
+      # The addresses to check: the one given by hand, else production on
+      # `main` (set the repository variable PRODUCTION_URL to change it). Empty
+      # on any other branch, where the deploy previews of the commit are used.
+      CHECK_URLS: ${{ github.event.inputs.url || (github.ref == 'refs/heads/main' && (vars.PRODUCTION_URL || 'https://optiweb-studio-mern-vercel.vercel.app')) || '' }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: optiweb-studio-mern-vercel/.nvmrc
+          cache: npm
+          cache-dependency-path: optiweb-studio-mern-vercel/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build, to know which app script this commit produces
+        run: npm run build
+
+      # Waits up to ten minutes for the deployment of this commit. Sends one
+      # small generated image to confirm that uploads are refused, and asks
+      # the site to audit its own home page. Changes nothing on the site.
+      #
+      # `--audit` adds an observation that cannot fail the step: the site
+      # audits this repository's page on GitHub, whose files are on other
+      # hosts, and the step's notices say how many of them it could read.
+      #
+      # A preview that failed to build fails this step. A preview behind a
+      # sign-in is reported and left out. A commit without previews passes
+      # with a notice that no deployed copy of it was checked.
+      - name: Check the deployed site
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -f
+          STATUS=0
+          if [ -z "$CHECK_URLS" ]; then
+            CHECK_URLS="$(node scripts/deploy-previews.mjs "$GITHUB_REPOSITORY" "$GITHUB_SHA" --wait 600)" || STATUS=1
+          fi
+          for url in $CHECK_URLS; do
+            node scripts/deployed-smoke.mjs "$url" --expect-build --wait 600 --audit "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" || STATUS=1
+          done
+          exit "$STATUS"

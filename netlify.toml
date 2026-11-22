@@ -1,0 +1,53 @@
+# Netlify configuration for OptiWeb Studio (Next.js App Router).
+#
+# The Next.js Runtime is provided by Netlify's Next.js adapter, which builds the
+# app, emits the server function and rewrites /api/* to it automatically.
+# No catch-all Vercel-style adapter is involved.
+#
+# Base directory note: this file sits next to package.json. If Netlify builds
+# from a repository root that contains the app in a subdirectory, set the site's
+# "Base directory" to that subdirectory in the Netlify UI (or move this file to
+# the repo root and set `base = "<subdir>"` here). Do not configure the build
+# relative to a parent directory that has no package.json.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # sharp installs a prebuilt libvips binary for the platform it is installed on.
+  # Skipping optional dependencies silently breaks it at runtime.
+  NPM_FLAGS = "--include=optional"
+
+# ---------------------------------------------------------------------------
+# Netlify Functions (Next.js server routes)
+#
+# `sharp` is a native module. If it is bundled into the function it must carry
+# its libvips shared objects; if it is left external it must be resolvable from
+# node_modules at runtime. The previous failure was a module-initialisation
+# error: the native binary was absent from the deployed function, so every route
+# whose module graph imported sharp returned a bare text/plain 500.
+#
+# Keep both the package and its platform binaries included in the upload so the
+# dynamic import inside src/server/services/sharpRuntime.ts always resolves.
+# ---------------------------------------------------------------------------
+[functions]
+  included_files = [
+    "node_modules/sharp/**",
+    "node_modules/@img/**",
+  ]
+
+# Netlify's Next.js adapter owns API routing. Do not rewrite /api to a guessed function name.
+
+# Next.js static assets are immutable and safe to cache aggressively.
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    cache-control = "public, max-age=31536000, immutable"
+
+# Never let a CDN cache API responses or artifacts: they are session-scoped.
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    cache-control = "private, no-store"
