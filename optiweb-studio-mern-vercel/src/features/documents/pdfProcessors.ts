@@ -2,6 +2,7 @@ import { PDFDocument } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist";
 import JSZip from "jszip";
 
+import type { DocumentCompressionMode } from "./documentLimits";
 import {
   MAX_DOCUMENT_ARCHIVE_BYTES,
   MAX_IMAGE_PIXELS,
@@ -77,7 +78,7 @@ async function renderBalancedPdf(doc: Awaited<ReturnType<typeof loadPdf>>["doc"]
   return out.save({ useObjectStreams: true, addDefaultPage: false });
 }
 
-export async function compressPdf(file: File, mode: "lossless" | "balanced", onProgress?: Progress) {
+export async function compressPdf(file: File, mode: DocumentCompressionMode, onProgress?: Progress) {
   const start = performance.now();
   const { bytes, task, doc } = await loadPdf(file);
   try {
@@ -95,11 +96,9 @@ export async function compressPdf(file: File, mode: "lossless" | "balanced", onP
       });
     }
     if (doc.numPages > MAX_PDF_RENDER_PAGES) throw new Error(`Balanced compression is limited to ${MAX_PDF_RENDER_PAGES} pages to protect browser memory. Try lossless compression instead.`);
-    const qualityLevels = [
-      { maxEdge: 2_200, jpegQuality: 0.78 },
-      { maxEdge: 1_800, jpegQuality: 0.68 },
-      { maxEdge: 1_400, jpegQuality: 0.56 },
-    ];
+    const qualityLevels = mode === "small"
+      ? [{ maxEdge: 1_600, jpegQuality: 0.62 }, { maxEdge: 1_300, jpegQuality: 0.5 }, { maxEdge: 1_000, jpegQuality: 0.38 }]
+      : [{ maxEdge: 2_200, jpegQuality: 0.78 }, { maxEdge: 1_800, jpegQuality: 0.68 }, { maxEdge: 1_400, jpegQuality: 0.56 }];
     let output: Uint8Array | undefined;
     let selectedQuality: (typeof qualityLevels)[number] | undefined;
     for (const quality of qualityLevels) {
@@ -112,12 +111,13 @@ export async function compressPdf(file: File, mode: "lossless" | "balanced", onP
       candidate.fill(0);
     }
     const smaller = Boolean(output && selectedQuality);
+    const modeLabel = mode === "small" ? "Smaller-file" : "Balanced";
     const notices = [
-      "Balanced compression rasterizes each page to JPEG. Text, vector graphics, forms, accessibility data and document metadata are not preserved.",
+      `${modeLabel} compression rasterizes each page to JPEG. Text, vector graphics, forms, accessibility data and document metadata are not preserved.`,
       ...(smaller && selectedQuality!.maxEdge < qualityLevels[0].maxEdge ? [`A lower raster resolution (${selectedQuality!.maxEdge}px maximum edge, JPEG quality ${Math.round(selectedQuality!.jpegQuality * 100)}%) was needed to make this file smaller.`] : []),
       ...(!smaller ? ["Compression could not make this already compact or image-optimized PDF smaller within the safe quality and output limits, so the original is retained unchanged."] : []),
     ];
-    const result = makeResult(bytes.byteLength, output ?? bytes, `${safeBaseName(file.name)}${smaller ? "-balanced" : ""}.pdf`, "application/pdf", start, {
+    const result = makeResult(bytes.byteLength, output ?? bytes, `${safeBaseName(file.name)}${smaller ? mode === "small" ? "-small" : "-balanced" : ""}.pdf`, "application/pdf", start, {
       pagesOrSlides: doc.numPages,
       keptOriginal: !smaller,
       notices,

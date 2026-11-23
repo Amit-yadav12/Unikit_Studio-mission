@@ -2,6 +2,7 @@ import { PDFDocument } from "pdf-lib";
 import { PptxViewer, RECOMMENDED_ZIP_LIMITS } from "@aiden0z/pptx-renderer";
 import html2canvas from "html2canvas";
 
+import type { DocumentCompressionMode, PowerPointPdfMode } from "./documentLimits";
 import {
   MAX_DOCUMENT_ARCHIVE_BYTES,
   MAX_IMAGE_PIXELS,
@@ -11,6 +12,7 @@ import {
   MAX_PPTX_ENTRY_BYTES,
   MAX_PPTX_EXPANDED_BYTES,
   MAX_PPTX_MEDIA_BYTES,
+  MAX_TOTAL_RENDER_PIXELS,
   TARGET_RASTER_EDGE,
 } from "./documentLimits";
 import { assertDocumentSize, loadPptxArchive, readImageDimensions, safeBaseName } from "./documentValidation";
@@ -18,6 +20,7 @@ import type { SlideRaster } from "./pptxPackage";
 import { assertCanvasBudget, makeResult, outputCanvas } from "./documentShared";
 
 type Progress = (completed: number, total: number, label?: string) => void;
+const MAX_PPTX_PDF_RASTER_EDGE = 4_200;
 
 async function reencodeImage(bytes: Uint8Array, name: string, maxEdge = TARGET_RASTER_EDGE, jpegQuality = 0.82): Promise<Uint8Array | null> {
   if (!/\.(png|jpe?g)$/i.test(name)) return null;
@@ -42,7 +45,7 @@ async function reencodeImage(bytes: Uint8Array, name: string, maxEdge = TARGET_R
   } finally { bitmap.close(); }
 }
 
-export async function compressPptx(file: File, onProgress?: Progress) {
+export async function compressPptx(file: File, mode: DocumentCompressionMode = "balanced", onProgress?: Progress) {
   const start = performance.now();
   assertDocumentSize(file);
   const input = new Uint8Array(await file.arrayBuffer());
@@ -55,14 +58,15 @@ export async function compressPptx(file: File, onProgress?: Progress) {
     const media = archive.entries.filter((entry) => entry.name.toLowerCase().startsWith("ppt/media/"));
     let done = 0;
     let fallbackImageCount = 0;
-    for (const entry of media) {
+    const imageLevels = mode === "small"
+      ? { jpeg: [{ maxEdge: 1_900, quality: 0.62 }, { maxEdge: 1_500, quality: 0.48 }, { maxEdge: 1_200, quality: 0.36 }], png: [{ maxEdge: 2_400, quality: 0.82 }, { maxEdge: 1_800, quality: 0.82 }, { maxEdge: 1_400, quality: 0.82 }] }
+      : { jpeg: [{ maxEdge: TARGET_RASTER_EDGE, quality: 0.82 }, { maxEdge: 2_400, quality: 0.68 }, { maxEdge: 1_800, quality: 0.56 }], png: [{ maxEdge: TARGET_RASTER_EDGE, quality: 0.82 }, { maxEdge: 2_200, quality: 0.82 }, { maxEdge: 1_600, quality: 0.82 }] };
+    for (const entry of (mode === "lossless" ? [] : media)) {
       const original = await archive.zip.file(entry.name)!.async("uint8array");
       try {
         if (/\.(png|jpe?g)$/i.test(entry.name)) {
           const isJpeg = /\.jpe?g$/i.test(entry.name);
-          const levels = isJpeg
-            ? [{ maxEdge: TARGET_RASTER_EDGE, quality: 0.82 }, { maxEdge: 2_400, quality: 0.68 }, { maxEdge: 1_800, quality: 0.56 }]
-            : [{ maxEdge: TARGET_RASTER_EDGE, quality: 0.82 }, { maxEdge: 2_200, quality: 0.82 }, { maxEdge: 1_600, quality: 0.82 }];
+          const levels = isJpeg ? imageLevels.jpeg : imageLevels.png;
           let selected: Uint8Array | undefined;
           for (let level = 0; level < levels.length; level += 1) {
             const candidate = await reencodeImage(original, entry.name, levels[level].maxEdge, levels[level].quality);
@@ -83,9 +87,9 @@ export async function compressPptx(file: File, onProgress?: Progress) {
       done += 1;
       onProgress?.(done, media.length || 1, `Checking embedded image ${done} of ${media.length}`);
     }
-    if (replacements.size === 0) return makeResult(input.byteLength, input, `${safeBaseName(file.name)}.pptx`, "application/vnd.openxmlformats-officedocument.presentationml.presentation", start, { pagesOrSlides: archive.slideCount, keptOriginal: true, notices: [...notices, "No supported embedded raster image could be reduced within the safe quality and resolution settings. The original PowerPoint is retained unchanged."] });
+    if (mode !== "lossless" && replacements.size === 0) return makeResult(input.byteLength, input, `${safeBaseName(file.name)}.pptx`, "application/vnd.openxmlformats-officedocument.presentationml.presentation", start, { pagesOrSlides: archive.slideCount, keptOriginal: true, notices: [...notices, "No supported embedded raster image could be reduced within the selected quality and resolution settings. The original PowerPoint is retained unchanged."] });
     if (fallbackImageCount) notices.push(`${fallbackImageCount} embedded image${fallbackImageCount === 1 ? "" : "s"} needed stronger downsampling or JPEG compression to reduce the presentation size; review the slides for visual changes.`);
-    notices.push("Optimized embedded images may be downscaled and JPEG images are re-encoded; inspect the presentation for visual changes.");
+    if (mode !== "lossless") notices.push("Optimized embedded images may be downscaled and JPEG images are re-encoded; inspect the presentation for visual changes.");
     for (const [name, bytes] of replacements) archive.zip.file(name, bytes);
     const output = await archive.zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 }, streamFiles: true });
     if (output.byteLength > MAX_DOCUMENT_ARCHIVE_BYTES) throw new Error("The optimized package exceeds the 50 MB archive safety limit.");
@@ -93,7 +97,7 @@ export async function compressPptx(file: File, onProgress?: Progress) {
     return makeResult(input.byteLength, improved ? output : input, `${safeBaseName(file.name)}${improved ? "-optimized" : ""}.pptx`, "application/vnd.openxmlformats-officedocument.presentationml.presentation", start, {
       pagesOrSlides: archive.slideCount,
       keptOriginal: !improved,
-      notices: [...notices, ...(improved ? [] : ["The optimized package was not smaller; the original presentation is retained unchanged."])],
+      notices: [...notices, ...(mode === "lossless" ? ["Lossless mode leaves every embedded image byte unchanged and only rebuilds the ZIP package."] : []), ...(improved ? [] : [mode === "lossless" ? "The lossless package rewrite was not smaller; the original presentation is retained unchanged." : "The optimized package was not smaller; the original presentation is retained unchanged."])],
     });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "The optimization failed.";
@@ -117,14 +121,18 @@ function estimateSlideWarnings(slideXml: string[]): string[] {
   return [...notices];
 }
 
-export async function pptxToPdf(file: File, onProgress?: Progress) {
+export async function pptxToPdf(file: File, mode: PowerPointPdfMode = "balanced", onProgress?: Progress) {
   const start = performance.now();
   assertDocumentSize(file);
   const source = new Uint8Array(await file.arrayBuffer());
   let archive: Awaited<ReturnType<typeof loadPptxArchive>>;
   try { archive = await loadPptxArchive(file, source); }
   catch (cause) { source.fill(0); throw cause; }
-  if (archive.slideCount > MAX_PPTX_SLIDES) throw new Error(`PPTX-to-PDF conversion is limited to ${MAX_PPTX_SLIDES} slides.`);
+  if (archive.slideCount > MAX_PPTX_SLIDES) {
+    for (const entry of archive.entries) archive.zip.remove(entry.name);
+    source.fill(0);
+    throw new Error(`PPTX-to-PDF conversion is limited to ${MAX_PPTX_SLIDES} slides.`);
+  }
   const parsedSlides = await Promise.all(archive.entries.filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry.name)).map((entry) => archive.zip.file(entry.name)!.async("string")));
   const notices = [...new Set([...archive.notices, ...estimateSlideWarnings(parsedSlides)])];
   const host = document.createElement("div");
@@ -165,7 +173,9 @@ export async function pptxToPdf(file: File, onProgress?: Progress) {
     const slideWidth = Number.isFinite(viewer.slideWidth) && viewer.slideWidth > 0 ? viewer.slideWidth : 1280;
     const slideHeight = Number.isFinite(viewer.slideHeight) && viewer.slideHeight > 0 ? viewer.slideHeight : 720;
     const ratio = slideWidth / slideHeight;
-    const rasterScale = Math.min(2.5, TARGET_RASTER_EDGE / Math.max(slideWidth, slideHeight), Math.sqrt(MAX_PAGE_PIXELS / (slideWidth * slideHeight)));
+    const requestedDpi = mode === "maximum" ? 300 : mode === "small" ? 150 : 220;
+    const requestedScale = requestedDpi / 96;
+    const rasterScale = Math.min(requestedScale, MAX_PPTX_PDF_RASTER_EDGE / Math.max(slideWidth, slideHeight), Math.sqrt(MAX_PAGE_PIXELS / (slideWidth * slideHeight)), Math.sqrt(MAX_TOTAL_RENDER_PIXELS / (viewer.slideCount * slideWidth * slideHeight)));
     const expectedWidth = Math.ceil(slideWidth * rasterScale);
     const expectedHeight = Math.ceil(slideHeight * rasterScale);
     assertCanvasBudget(expectedWidth, expectedHeight, 0);
@@ -214,7 +224,8 @@ export async function pptxToPdf(file: File, onProgress?: Progress) {
       }
       assertCanvasBudget(canvas.width, canvas.height, totalPixels);
       totalPixels += canvas.width * canvas.height;
-      const jpeg = await outputCanvas(canvas, "jpeg", 0.94);
+      const jpegQuality = mode === "maximum" ? 0.96 : mode === "small" ? 0.78 : 0.9;
+      const jpeg = await outputCanvas(canvas, "jpeg", jpegQuality);
       rasters.push({ bytes: new Uint8Array(await jpeg.arrayBuffer()), mime: "image/jpeg", width: canvas.width, height: canvas.height });
       canvas.width = 1; canvas.height = 1;
       handle.dispose();
@@ -229,9 +240,9 @@ export async function pptxToPdf(file: File, onProgress?: Progress) {
     }
     const output = await pdf.save({ useObjectStreams: true, addDefaultPage: false, objectsPerTick: 40 });
     if (output.byteLength > MAX_DOCUMENT_ARCHIVE_BYTES) throw new Error("The rendered PDF exceeds the 50 MB output safety limit.");
-    return makeResult(source.byteLength, output, `${safeBaseName(file.name)}-visual.pdf`, "application/pdf", start, {
+    return makeResult(source.byteLength, output, `${safeBaseName(file.name)}-visual-${mode}.pdf`, "application/pdf", start, {
       pagesOrSlides: viewer.slideCount,
-      notices: [...notices, "Static visual export only. Confirm fonts, charts, tables, SmartArt, embedded objects and page appearance in the downloaded PDF. External media is blocked and animations are not exported."],
+      notices: [...notices, `Static visual export only: slide artwork is rasterized at up to ${Math.round(rasterScale * 96)} DPI (requested ${requestedDpi} DPI; browser canvas and memory limits may reduce this). Text is not selectable/searchable, and vector content, notes, animations, transitions and accessibility structure are not preserved. Confirm fonts, charts, tables, SmartArt, embedded objects and page appearance in the downloaded PDF. External media is blocked.`, ...(mode === "small" ? ["Smaller-file mode uses a lower raster resolution and JPEG quality, which can soften fine text and details."] : [])],
     });
   } finally {
     handles.forEach((handle) => handle.dispose());

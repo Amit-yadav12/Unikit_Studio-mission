@@ -4,7 +4,7 @@ import { Panel, PanelHeader } from "@/components/ui/Layout";
 import { StatusBadge } from "@/components/ui/Feedback";
 import { formatBytes, formatSavingsPercent } from "@/lib/format";
 import { MAX_DOCUMENT_BYTES, MAX_IMAGE_INPUTS } from "./documentLimits";
-import type { DocumentOperation, DocumentResult } from "./documentLimits";
+import type { DocumentCompressionMode, DocumentOperation, DocumentResult, PowerPointPdfMode } from "./documentLimits";
 import { assertDocumentSize } from "./documentValidation";
 
 type Operation = { id: DocumentOperation; title: string; detail: string; accepts: string; icon: typeof FileText; multi?: boolean };
@@ -40,7 +40,9 @@ export function DocumentsStudio() {
   const [operation, setOperation] = useState<DocumentOperation>("compress-pdf");
   const [file, setFile] = useState<File | null>(null);
   const [images, setImages] = useState<File[]>([]);
-  const [pdfMode, setPdfMode] = useState<"lossless" | "balanced">("balanced");
+  const [pdfMode, setPdfMode] = useState<DocumentCompressionMode>("balanced");
+  const [pptxMode, setPptxMode] = useState<DocumentCompressionMode>("balanced");
+  const [pptxPdfMode, setPptxPdfMode] = useState<PowerPointPdfMode>("balanced");
   const [imageFormat, setImageFormat] = useState<"png" | "jpeg">("png");
   const [progress, setProgress] = useState("");
   const [working, setWorking] = useState(false);
@@ -93,8 +95,8 @@ export function DocumentsStudio() {
       if (operation === "compress-pptx" || operation === "pptx-to-pdf") {
         const processors = await import("./pptxProcessors");
         outcome = operation === "compress-pptx"
-          ? await processors.compressPptx(file!, onProgress)
-          : await processors.pptxToPdf(file!, onProgress);
+          ? await processors.compressPptx(file!, pptxMode, onProgress)
+          : await processors.pptxToPdf(file!, pptxPdfMode, onProgress);
       } else {
         const processors = await import("./pdfProcessors");
         if (operation === "compress-pdf") outcome = await processors.compressPdf(file!, pdfMode, onProgress);
@@ -154,10 +156,21 @@ export function DocumentsStudio() {
           </label>
           {chosenFiles.length > 0 && <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted"><span>{current.multi ? `${images.length} images · ${formatBytes(inputBytes)} total` : chosenFiles[0].name}</span><button type="button" onClick={() => { setFile(null); setImages([]); setResult(null); if (inputRef.current) inputRef.current.value = ""; }} className="inline-flex items-center gap-1 text-ink-soft hover:text-danger" disabled={working}><X className="size-3.5" aria-hidden />Remove</button></div>}
 
-          {operation === "compress-pdf" && <fieldset className="mt-4"><legend className="mb-2 text-xs font-medium text-ink">Compression approach</legend><div className="grid gap-2 sm:grid-cols-2">
-            <label className={`flex cursor-pointer gap-2 border p-3 ${pdfMode === "lossless" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pdf-compression" checked={pdfMode === "lossless"} onChange={() => setPdfMode("lossless")} /><span><span className="block text-xs font-semibold text-ink">Lossless rewrite</span><span className="mt-1 block text-2xs leading-relaxed text-muted">Preserves page content; may make little or no size reduction. Original retained if output grows.</span></span></label>
-            <label className={`flex cursor-pointer gap-2 border p-3 ${pdfMode === "balanced" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pdf-compression" checked={pdfMode === "balanced"} onChange={() => setPdfMode("balanced")} /><span><span className="block text-xs font-semibold text-ink">Balanced · raster pages</span><span className="mt-1 block text-2xs leading-relaxed text-muted">Recommended for size reduction; pages become JPEG images, not searchable text.</span></span></label>
+          {operation === "compress-pdf" && <fieldset className="mt-4"><legend className="mb-2 text-xs font-medium text-ink">Compression approach</legend><div className="grid gap-2 sm:grid-cols-3">
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pdfMode === "lossless" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pdf-compression" checked={pdfMode === "lossless"} onChange={() => setPdfMode("lossless")} /><span><span className="block text-xs font-semibold text-ink">Maximum quality · lossless</span><span className="mt-1 block text-2xs leading-relaxed text-muted">Keeps page content; may not reduce a compact file.</span></span></label>
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pdfMode === "balanced" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pdf-compression" checked={pdfMode === "balanced"} onChange={() => setPdfMode("balanced")} /><span><span className="block text-xs font-semibold text-ink">Balanced · recommended</span><span className="mt-1 block text-2xs leading-relaxed text-muted">Tries high quality first, then steps down only if needed. Rasterizes pages; text/forms are not preserved.</span></span></label>
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pdfMode === "small" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pdf-compression" checked={pdfMode === "small"} onChange={() => setPdfMode("small")} /><span><span className="block text-xs font-semibold text-ink">Smaller file</span><span className="mt-1 block text-2xs leading-relaxed text-muted">More downsampling and stronger JPEG compression for size-first output.</span></span></label>
           </div></fieldset>}
+          {operation === "compress-pptx" && <fieldset className="mt-4"><legend className="mb-2 text-xs font-medium text-ink">PowerPoint optimization</legend><div className="grid gap-2 sm:grid-cols-3">
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pptxMode === "lossless" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pptx-compression" checked={pptxMode === "lossless"} onChange={() => setPptxMode("lossless")} /><span><span className="block text-xs font-semibold text-ink">Maximum quality · lossless</span><span className="mt-1 block text-2xs leading-relaxed text-muted">Only recompresses the package; embedded image bytes are unchanged.</span></span></label>
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pptxMode === "balanced" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pptx-compression" checked={pptxMode === "balanced"} onChange={() => setPptxMode("balanced")} /><span><span className="block text-xs font-semibold text-ink">Balanced · recommended</span><span className="mt-1 block text-2xs leading-relaxed text-muted">Preserves the best image setting that makes the deck smaller.</span></span></label>
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pptxMode === "small" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pptx-compression" checked={pptxMode === "small"} onChange={() => setPptxMode("small")} /><span><span className="block text-xs font-semibold text-ink">Smaller file</span><span className="mt-1 block text-2xs leading-relaxed text-muted">More downsampling; stronger JPEG compression for embedded JPEGs.</span></span></label>
+          </div></fieldset>}
+          {operation === "pptx-to-pdf" && <fieldset className="mt-4"><legend className="mb-2 text-xs font-medium text-ink">PDF rendering quality</legend><div className="grid gap-2 sm:grid-cols-3">
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pptxPdfMode === "maximum" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pptx-pdf-quality" checked={pptxPdfMode === "maximum"} onChange={() => setPptxPdfMode("maximum")} /><span><span className="block text-xs font-semibold text-ink">Maximum · up to 300 DPI</span><span className="mt-1 block text-2xs leading-relaxed text-muted">Highest practical resolution; output may be larger.</span></span></label>
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pptxPdfMode === "balanced" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pptx-pdf-quality" checked={pptxPdfMode === "balanced"} onChange={() => setPptxPdfMode("balanced")} /><span><span className="block text-xs font-semibold text-ink">Balanced · recommended</span><span className="mt-1 block text-2xs leading-relaxed text-muted">High-detail slide images with a smaller PDF.</span></span></label>
+            <label className={`flex cursor-pointer gap-2 border p-3 ${pptxPdfMode === "small" ? "border-accent-border bg-accent-soft/30" : "border-line bg-surface"}`}><input type="radio" name="pptx-pdf-quality" checked={pptxPdfMode === "small"} onChange={() => setPptxPdfMode("small")} /><span><span className="block text-xs font-semibold text-ink">Smaller PDF</span><span className="mt-1 block text-2xs leading-relaxed text-muted">Lower raster resolution and JPEG quality.</span></span></label>
+          </div><p className="mt-2 text-2xs text-muted">The slide artwork is rasterized, so text is not selectable/searchable. Fonts, charts, SmartArt, embedded objects and other unsupported features may need review.</p></fieldset>}
           {operation === "pdf-to-images" && <div className="mt-4"><label htmlFor="document-image-format" className="mb-1.5 block text-xs font-medium text-ink">Export image format</label><select id="document-image-format" value={imageFormat} onChange={(event) => setImageFormat(event.target.value as "png" | "jpeg")} className="h-9 border border-line-strong bg-surface px-2 text-sm text-ink"><option value="png">PNG · lossless, larger</option><option value="jpeg">JPEG · smaller, white background</option></select></div>}
           {error && <div role="alert" className="mt-4 border border-danger-border bg-danger-soft px-3 py-2.5 text-xs leading-relaxed text-danger">{error}</div>}
           {working && <div className="mt-4 flex items-center gap-2 border border-accent-border bg-accent-soft/30 px-3 py-2.5 text-xs text-accent-hover" role="status" aria-live="polite"><LoaderCircle className="size-4 animate-spin" aria-hidden />{progress || "Processing locally…"}</div>}

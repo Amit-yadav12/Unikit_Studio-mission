@@ -16,6 +16,9 @@ export const MAX_IMAGE_INPUT_BYTES = 15 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 24_000_000;
 export const TARGET_RASTER_EDGE = 2_800;
 
+export type DocumentCompressionMode = "lossless" | "balanced" | "small";
+export type PowerPointPdfMode = "maximum" | "balanced" | "small";
+
 export type DocumentOperation =
   | "compress-pdf"
   | "pdf-to-images"
