@@ -207,14 +207,14 @@ try {
   await go("/app/documents");
   const documentWriteCount = writes.length;
   await documentOperation("Compress PDF", pdfFile);
-  check(await page.getByLabel("Balanced · raster pages").isChecked(), "PDF compression defaults to the recommended size-reduction mode");
-  await page.getByLabel("Lossless rewrite").click();
+  check(await page.getByLabel("Balanced · recommended").isChecked(), "PDF compression defaults to the recommended size-reduction mode");
+  await page.getByLabel("Maximum quality · lossless").click();
   const losslessPdf = await processDocument("lossless PDF compression");
   const losslessDoc = await PDFDocument.load(losslessPdf.bytes);
   check(losslessPdf.name.endsWith(".pdf") && losslessDoc.getPageCount() === 2, "lossless PDF output reopens with both pages intact");
 
   await documentOperation("Compress PDF", pdfFile);
-  await page.getByLabel("Balanced · raster pages").click();
+  await page.getByLabel("Balanced · recommended").click();
   const balancedPdf = await processDocument("balanced PDF compression");
   const balancedDoc = await PDFDocument.load(balancedPdf.bytes);
   check(balancedPdf.name.endsWith(".pdf") && balancedDoc.getPageCount() === 2, "balanced PDF output is a valid two-page PDF");
@@ -223,7 +223,7 @@ try {
   check(smallPdfResultText.includes("Compression could not make this already compact or image-optimized PDF smaller"), "when a tiny PDF cannot shrink, the result explains why and confirms the original was retained");
 
   await documentOperation("Compress PDF", scannedPdfFile);
-  await page.getByLabel("Balanced · raster pages").click();
+  await page.getByLabel("Balanced · recommended").click();
   const compressedScan = await processDocument("balanced compression of a multi-page scanned PDF");
   const compressedScanDoc = await PDFDocument.load(compressedScan.bytes);
   check(compressedScan.bytes.length < scannedPdfFixture.length, `balanced compression reduces an image-heavy PDF (${scannedPdfFixture.length} → ${compressedScan.bytes.length} bytes)`);
@@ -289,11 +289,26 @@ try {
   check(retainedDeckResult.bytes.equals(textOnlyBytes), "image-free editable PowerPoint is returned byte-for-byte unchanged");
 
   await documentOperation("Optimize PowerPoint", { name: deckResult.name, mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: nativeDeckBytes });
+  await page.getByLabel("Maximum quality · lossless").click();
+  const losslessDeckResult = await processDocument("lossless PowerPoint package rewrite");
+  const losslessDeck = await JSZip.loadAsync(losslessDeckResult.bytes, { checkCRC32: true });
+  const originalPackage = await JSZip.loadAsync(nativeDeckBytes);
+  const sourceImage = await originalPackage.file("ppt/media/page1.jpg").async("nodebuffer");
+  const unchangedImage = await losslessDeck.file("ppt/media/page1.jpg").async("nodebuffer");
+  check(sourceImage.equals(unchangedImage), "lossless PowerPoint optimization leaves embedded image bytes unchanged");
+
+  await documentOperation("Optimize PowerPoint", { name: deckResult.name, mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: nativeDeckBytes });
+  await page.getByLabel("Balanced · recommended").click();
   const optimizedDeckResult = await processDocument("PowerPoint optimization");
   const optimizedDeck = await JSZip.loadAsync(optimizedDeckResult.bytes, { checkCRC32: true });
   const optimizedSlides = Object.keys(optimizedDeck.files).filter((name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"));
   const optimizedSlideOne = await optimizedDeck.file("ppt/slides/slide1.xml")?.async("string");
   check(optimizedDeckResult.name.endsWith("-optimized.pptx") && optimizedDeckResult.bytes.length < nativeDeckBytes.length && optimizedSlides.length === 2 && optimizedSlideOne?.includes("Native editable slide 1"), `PowerPoint optimization reduces embedded-image size and preserves both slides (${nativeDeckBytes.length} → ${optimizedDeckResult.bytes.length} bytes)`);
+  await documentOperation("Optimize PowerPoint", { name: deckResult.name, mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: nativeDeckBytes });
+  await page.getByLabel("Smaller file").click();
+  const smallDeckResult = await processDocument("smaller-file PowerPoint optimization");
+  const smallDeck = await JSZip.loadAsync(smallDeckResult.bytes, { checkCRC32: true });
+  check(smallDeckResult.bytes.length < nativeDeckBytes.length && Object.keys(smallDeck.files).filter((name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml")).length === 2, `smaller-file mode reduces this image-heavy PPTX while retaining both slides (${nativeDeckBytes.length} → ${smallDeckResult.bytes.length} bytes)`);
 
   await documentOperation("PowerPoint to PDF", { name: deckResult.name, mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: deckResult.bytes });
   const renderedPdf = await processDocument("PowerPoint-to-PDF rendering");
@@ -321,6 +336,25 @@ try {
   await documentOperation("PowerPoint to PDF", { name: "editable-slides.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: nativeDeckBytes });
   const nativeRendered = await processDocument("PowerPoint-to-PDF rendering of editable text slides");
   check((await PDFDocument.load(nativeRendered.bytes)).getPageCount() === 2, "editable native PowerPoint slides also render as both PDF pages");
+  await documentOperation("PowerPoint to PDF", { name: "editable-slides.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: nativeDeckBytes });
+  await page.getByLabel("Maximum · up to 300 DPI").click();
+  const maximumQualityPdf = await processDocument("maximum-quality PowerPoint-to-PDF rendering");
+  const maximumQualityImages = await embeddedJpegs(maximumQualityPdf.bytes);
+  check(maximumQualityPdf.name.endsWith("-maximum.pdf") && maximumQualityImages.length === 2 && maximumQualityImages[0].readUInt16BE(0) === 0xffd8, "maximum-quality conversion returns a named PDF with both full-slide image layers");
+  const maximumDimensions = await page.evaluate(async (encoded) => {
+    const image = new Image(); image.src = `data:image/jpeg;base64,${encoded}`; await image.decode();
+    return { width: image.naturalWidth, height: image.naturalHeight };
+  }, maximumQualityImages[0].toString("base64"));
+  check(maximumDimensions.width >= 2_400 && maximumDimensions.height >= 3_100, `maximum-quality mode approaches 300 DPI within safe canvas limits: ${JSON.stringify(maximumDimensions)}`);
+  await documentOperation("PowerPoint to PDF", { name: "editable-slides.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", buffer: nativeDeckBytes });
+  await page.getByLabel("Smaller PDF").click();
+  const smallQualityPdf = await processDocument("smaller-file PowerPoint-to-PDF rendering");
+  const smallQualityImages = await embeddedJpegs(smallQualityPdf.bytes);
+  const smallDimensions = await page.evaluate(async (encoded) => {
+    const image = new Image(); image.src = `data:image/jpeg;base64,${encoded}`; await image.decode();
+    return { width: image.naturalWidth, height: image.naturalHeight };
+  }, smallQualityImages[0].toString("base64"));
+  check(smallQualityPdf.name.endsWith("-small.pdf") && smallQualityImages.length === 2 && smallDimensions.width < maximumDimensions.width && smallDimensions.height < maximumDimensions.height, `smaller-file mode uses visibly lower raster dimensions: ${JSON.stringify(smallDimensions)}`);
 
   await documentOperation("Compress PDF", { name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("not a PDF") });
   await page.getByRole("button", { name: "Process in browser", exact: true }).click();
